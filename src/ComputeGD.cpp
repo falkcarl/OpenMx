@@ -243,18 +243,11 @@ void omxComputeGD::computeImpl(FitContext *fc)
 		fc->wanted |= FF_COMPUTE_GRADIENT;
 		break;
         case OptEngine_SD:{
-		rf.fc->copyParamToModel();
-		rf.setupSimpleBounds();
-		rf.setupIneqConstraintBounds();
-		rf.solEqBFun();
-		rf.myineqFun();
-		if(rf.inequality.size() == 0 && rf.equality.size() == 0) {
-			omxSD(rf);   // unconstrained problems
-		} else {
-			omxSD_AL(rf);       // constrained problems
-		}
-		fc->wanted |= FF_COMPUTE_GRADIENT;
-		break;}
+            SDcontext sd(rf);
+            sd.optimize();
+            fc->wanted |= FF_COMPUTE_GRADIENT;
+            break;
+        }
         default: Rf_error("Optimizer %d is not available", engine);
 	}
 

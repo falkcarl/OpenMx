@@ -9,7 +9,34 @@
 #include "Compute.h"
 #include "matrix.h"
 
-void omxSD(GradientOptimizerContext &);
-void omxSD_AL(GradientOptimizerContext &);
+class SDcontext {
+    public:
+        double fit;
+        Eigen::VectorXd grad;
+        int maxIter;
+        double priorSpeed;
+        double shrinkage;
+        int retries;
+        GradientOptimizerContext &rf;
+        //FitContext *fc;
+        size_t ineq_size;
+        size_t eq_size;
+        double rho;
+        double tau;
+        double gam;
+        double lam_min;
+        double lam_max;
+        double mu_max;
+        Eigen::VectorXd mu;
+        Eigen::VectorXd lambda;
+        Eigen::VectorXd V;
+        double ICM_tol;
+
+        // two methods for optimization
+        void optimize();
+        void linesearch();
+        // constructor
+        SDcontext(GradientOptimizerContext &goc);
+};
 
 #endif
