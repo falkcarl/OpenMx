@@ -20,8 +20,8 @@ struct SDcontext {
         int retries;
         GradientOptimizerContext &rf;
         //FitContext *fc;
-        size_t ineq_size;
-        size_t eq_size;
+        int ineq_size;
+        int eq_size;
         double rho;
         double tau;
         double gam;
@@ -63,18 +63,19 @@ struct fit_functional {
 
 	template <typename T1>
 	double operator()(Eigen::MatrixBase<T1>& x) const {
-        int mode = 0;
-        double al = 0;
-        for (size_t i = 0; i < unsigned(sd.eq_size); ++i)
-        {
-            al += 0.5 * sd.rho * (sd.rf.equality[i] + sd.lambda[i] / sd.rho) * (sd.rf.equality[i] + sd.lambda[i] / sd.rho);
-        }
+		int mode = 0;
+		double fit = sd.rf.solFun(x.derived().data(), &mode);
+		sd.rf.solEqBFun();
+		sd.rf.myineqFun();
+		double al = 0;
+		for (int i = 0; i < sd.eq_size; ++i) {
+			al += 0.5 * sd.rho * (sd.rf.equality[i] + sd.lambda[i] / sd.rho) * (sd.rf.equality[i] + sd.lambda[i] / sd.rho);
+		}
 
-        for (size_t i = 0; i < unsigned(sd.ineq_size); ++i)
-        {
-            al += 0.5 * sd.rho * std::max(0.0,(sd.rf.inequality[i] + sd.mu[i] / sd.rho)) * std::max(0.0,(sd.rf.inequality[i] + sd.mu[i] / sd.rho));
-        }
-		return sd.rf.solFun(x.derived().data(), &mode) + al;
+		for (int i = 0; i < sd.ineq_size; ++i) {
+			al += 0.5 * sd.rho * std::max(0.0,(sd.rf.inequality[i] + sd.mu[i] / sd.rho)) * std::max(0.0,(sd.rf.inequality[i] + sd.mu[i] / sd.rho));
+		}
+		return fit + al;
 	}
 };
 
@@ -168,11 +169,11 @@ void SDcontext::optimize() {
     eq_size = rf.equality.size();
     if(ineq_size == 0 && eq_size == 0) constrained = FALSE;
     double eq_norm = 0, ineq_norm = 0;
-    for(size_t i = 0; i < eq_size; i++)
+    for(int i = 0; i < eq_size; i++)
     {
         eq_norm += rf.equality[i] * rf.equality[i];
     }
-    for(size_t i = 0; i < ineq_size; i++)
+    for(int i = 0; i < ineq_size; i++)
     {
         ineq_norm += std::max(0.0, rf.inequality[i]) * std::max(0.0, rf.inequality[i]);
     }
@@ -212,16 +213,16 @@ void SDcontext::optimize() {
                 rf.solEqBFun();
                 rf.myineqFun();
 
-                for(size_t i = 0; i < eq_size; i++){
+                for(int i = 0; i < eq_size; i++){
                     lambda[i] = std::min(std::max(lam_min, (lambda[i] + rho * rf.equality[i])), lam_max);
                     ICM = std::max(ICM, std::abs(rf.equality[i]));
                 }
 
-                for(size_t i = 0; i < ineq_size; i++){
+                for(int i = 0; i < ineq_size; i++){
                     mu[i] = std::min(std::max(0.0, (mu[i] + rho * rf.inequality[i])),mu_max);
                 }
 
-                for(size_t i = 0; i < ineq_size; i++){
+                for(int i = 0; i < ineq_size; i++){
                     V[i] = std::max(rf.inequality[i], (-mu[i] / rho));
                     ICM = std::max(ICM, std::abs(V[i]));
                 }
