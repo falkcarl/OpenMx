@@ -14,10 +14,7 @@ namespace SteepestDescentNamespace {
 
 struct SDcontext {
         Eigen::VectorXd grad;
-        int maxIter;
-        double priorSpeed;
         double shrinkage;
-        int retries;
         GradientOptimizerContext &rf;
         //FitContext *fc;
         int ineq_size;
@@ -41,10 +38,7 @@ struct SDcontext {
 };
 
 SDcontext::SDcontext(GradientOptimizerContext &goc): rf(goc){
-            maxIter = 50000;
-            priorSpeed = 1.0;
             shrinkage = 0.7;
-            retries = 300;
             ineq_size = 0;
             eq_size = 0;
             rho = 0;
@@ -53,7 +47,8 @@ SDcontext::SDcontext(GradientOptimizerContext &goc): rf(goc){
             lam_min = -1e20;
             lam_max = 1e20;
             mu_max = 1e20;
-            ICM_tol = 1e-4;
+	    double fudgeFactor = 0.002;
+	    ICM_tol = Global->feasibilityTolerance * fudgeFactor;
 }
 
 struct fit_functional {
@@ -79,26 +74,30 @@ struct fit_functional {
 	}
 };
 
-void SDcontext::linesearch() {
-    int iter = 0;
+void SDcontext::linesearch()
+{
+    rf.informOut = INFORM_UNINITIALIZED;
+    double priorSpeed = 1.0;
     Eigen::Map< Eigen::VectorXd > currEst(rf.fc->est, rf.fc->numParam);
     Eigen::VectorXd majorEst = currEst;
 
     fit_functional ff(*this);
     double refFit = ff(currEst);
     if (!std::isfinite(refFit)) {
-	    rf.informOut = INFORM_STARTING_VALUES_INFEASIBLE;
-	    return;
+	    Rf_error("Moved into infeasible region"); // should be impossible
     }
 
     grad.resize(rf.fc->numParam);
 
+    double relImprovement = 0;
+    int maxIter = 1000;
+    int iter = 0;
     while(++iter < maxIter && !isErrorRaised()) {
 	    rf.fc->iterations += 1;
 	    gradient_with_ref(rf.gradientAlgo, rf.gradientIterations, rf.gradientStepSize,
 			      ff, refFit, majorEst, grad);
 
-	    if (rf.verbose >= 3) mxPrintMat("grad", grad);
+	    if (rf.verbose >= 4) mxPrintMat("grad", grad);
 
         if(grad.norm() == 0)
         {
@@ -115,6 +114,7 @@ void SDcontext::linesearch() {
         Eigen::VectorXd searchDir = grad;
         searchDir /= searchDir.norm();
         prevEst.setConstant(nan("uninit"));
+	int retries = 300;
         while (--retries > 0 && !isErrorRaised()){
             Eigen::VectorXd nextEst = majorEst - speed * searchDir;
             nextEst = nextEst.cwiseMax(rf.solLB).cwiseMin(rf.solUB);
@@ -127,7 +127,8 @@ void SDcontext::linesearch() {
             double fit = ff(nextEst);
             if (fit < refFit) {
                 foundBetter = true;
-                refFit = fit;
+		relImprovement = (refFit - fit) / (1+fabs(refFit));
+		refFit = fit;
                 bestSpeed = speed;
                 bestEst = nextEst;
                 break;
@@ -135,11 +136,14 @@ void SDcontext::linesearch() {
             speed *= shrinkage;
         }
 
-        if (!foundBetter) {
-            rf.informOut = INFORM_CONVERGED_OPTIMUM;
-            if(rf.verbose >= 2) mxLog("After %i iterations, cannot find better estimation along the gradient direction", iter);
-            break;
-        }
+	double fudgeFactor = 1.0;
+	if (!foundBetter || relImprovement < rf.ControlTolerance * fudgeFactor) {
+		if(rf.verbose >= 2) {
+			mxLog("After %i iterations, cannot find better estimation along the gradient direction", iter);
+		}
+		rf.informOut = INFORM_CONVERGED_OPTIMUM;
+		break;
+	}
 
         if (rf.verbose >= 2) mxLog("major fit %f bestSpeed %g", refFit, bestSpeed);
         majorEst = bestEst;
@@ -147,6 +151,9 @@ void SDcontext::linesearch() {
     }
     currEst = majorEst;
     if ((grad.array().abs() > 0.1).any()) {
+	    // wrong condition, see other optimizers
+	    // box constraints need special handling
+	    // Also, this check should only happen once at the end of optimize()
 	    rf.informOut = INFORM_NOT_AT_OPTIMUM;
     }
     if (iter >= maxIter - 1) {
@@ -157,17 +164,24 @@ void SDcontext::linesearch() {
 
 }
 
-void SDcontext::optimize() {
+void SDcontext::optimize()
+{
     bool constrained = TRUE;
     rf.fc->copyParamToModel();
     ComputeFit("SD", rf.fitMatrix, FF_COMPUTE_FIT, rf.fc);
-    rf.setupSimpleBounds();
+    if (!std::isfinite(rf.fc->fit)) {
+	    rf.informOut = INFORM_STARTING_VALUES_INFEASIBLE;
+	    return;
+    }
+
+    rf.setupIneqConstraintBounds();
     rf.solEqBFun();
     rf.myineqFun();
 
     ineq_size = rf.inequality.size();
     eq_size = rf.equality.size();
     if(ineq_size == 0 && eq_size == 0) constrained = FALSE;
+
     double eq_norm = 0, ineq_norm = 0;
     for(int i = 0; i < eq_size; i++)
     {
@@ -184,13 +198,18 @@ void SDcontext::optimize() {
         rho = 0;
     }
 
+    if (rf.verbose >= 1) {
+	    mxLog("Welcome to SD, constrained=%d ICM_tol=%f", constrained, ICM_tol);
+    }
+    if (!constrained) {
+            rf.fc->wanted |= FF_COMPUTE_GRADIENT;
+    }
+
     mu.resize(ineq_size);
     mu.setZero();
     lambda.resize(eq_size);
     lambda.setZero();
     V.resize(ineq_size);
-
-    rf.informOut = INFORM_UNINITIALIZED;
 
     switch (constrained) {
         case FALSE:{
@@ -202,13 +221,14 @@ void SDcontext::optimize() {
             double ICM = HUGE_VAL;
             int iter = 0;
             // initialize penalty parameter rho and the Lagrange multipliers lambda and mu
-            while (1) {
+            while (!isErrorRaised()) {
                 iter++;
-                ICM_tol = 1e-4;
                 double prev_ICM = ICM;
                 ICM = 0;
+		if (rf.verbose >= 3) {
+			mxLog("prev_ICM=%f, solve subproblem with rho=%f", prev_ICM, rho);
+		}
                 linesearch();
-                if(rf.informOut == INFORM_STARTING_VALUES_INFEASIBLE) return;
                 rf.fc->copyParamToModel();
                 rf.solEqBFun();
                 rf.myineqFun();
@@ -227,17 +247,13 @@ void SDcontext::optimize() {
                     ICM = std::max(ICM, std::abs(V[i]));
                 }
 
-                if(!(iter == 1 || ICM <= tau * prev_ICM))
-                {
-                    rho *= gam;
-                }
+		rho *= gam; // why not do this every time? TODO
 
-                if(ICM < ICM_tol)
-                {
+                if (ICM < ICM_tol) {
                     if(rf.verbose >= 1) mxLog("Augmented lagrangian coverges!");
                     return;
                 }
-                if (iter >= maxIter) {
+                if (iter >= 10) {
                     rf.informOut = INFORM_ITERATION_LIMIT;
                     break;
                 }

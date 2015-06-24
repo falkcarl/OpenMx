@@ -2812,7 +2812,7 @@ void GradientOptimizerContext::setupSimpleBounds()
 	copyBounds();
 }
 
-void GradientOptimizerContext::setupIneqConstraintBounds()
+void GradientOptimizerContext::setupIneqConstraintBounds() // rename TODO
 {
 	solLB.resize(fc->numParam);
 	solUB.resize(fc->numParam);
@@ -2933,7 +2933,7 @@ double GradientOptimizerContext::solFun(double *myPars, int* mode)
 		}
 	}
 
-	if (verbose >= 3) {
+	if (verbose >= 4) {
 		mxLog("fit %f (mode %d)", fc->fit, *mode);
 	}
 
@@ -2958,7 +2958,7 @@ void GradientOptimizerContext::solEqBFun()
 		cur += con.size;
 	}
 
-	if (verbose >= 3) {
+	if (verbose >= 4) {
 		mxPrintMat("equality", equality);
 	}
 };
@@ -2981,7 +2981,7 @@ void GradientOptimizerContext::myineqFun()
 		cur += con.size;
 	}
 
-	if (verbose >= 3) {
+	if (verbose >= 4) {
 		mxPrintMat("inequality", inequality);
 	}
 };
