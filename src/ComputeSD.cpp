@@ -1,7 +1,42 @@
 /* Steepest Descent optimizer for unconstrained problems*/
 
+#include <valarray>
+#include <math.h>
+#include "omxState.h"
+#include "omxFitFunction.h"
+#include "omxExportBackendState.h"
+#include "Compute.h"
+#include "matrix.h"
 #include "ComputeSD.h"
 #include "finiteDifferences.h"
+
+struct SDcontext {
+        Eigen::VectorXd grad;
+        int maxIter;
+        double priorSpeed;
+        double shrinkage;
+        int retries;
+        GradientOptimizerContext &rf;
+        //FitContext *fc;
+        size_t ineq_size;
+        size_t eq_size;
+        double rho;
+        double tau;
+        double gam;
+        double lam_min;
+        double lam_max;
+        double mu_max;
+        Eigen::VectorXd mu;
+        Eigen::VectorXd lambda;
+        Eigen::VectorXd V;
+        double ICM_tol;
+
+        // two methods for optimization
+        void optimize();
+        void linesearch();
+        // constructor
+        SDcontext(GradientOptimizerContext &goc);
+};
 
 SDcontext::SDcontext(GradientOptimizerContext &goc): rf(goc){
             maxIter = 50000;
@@ -43,20 +78,15 @@ struct fit_functional {
 
 void SDcontext::linesearch() {
     int iter = 0;
-    rf.setupSimpleBounds();
-    rf.informOut = INFORM_UNINITIALIZED;
-    int mode = 0;
-    rf.solFun(rf.fc->est, &mode);
-    if (mode == -1) {
-	    rf.informOut = INFORM_STARTING_VALUES_INFEASIBLE;
-	    return;
-    }
     Eigen::Map< Eigen::VectorXd > currEst(rf.fc->est, rf.fc->numParam);
     Eigen::VectorXd majorEst = currEst;
 
     fit_functional ff(*this);
-    fit = ff(currEst);
-    double refFit = fit;
+    double refFit = ff(currEst);
+    if (!std::isfinite(refFit)) {
+	    rf.informOut = INFORM_STARTING_VALUES_INFEASIBLE;
+	    return;
+    }
 
     grad.resize(rf.fc->numParam);
 
@@ -91,7 +121,7 @@ void SDcontext::linesearch() {
 
             rf.checkActiveBoxConstraints(nextEst);
 
-            fit = ff(nextEst);
+            double fit = ff(nextEst);
             if (fit < refFit) {
                 foundBetter = true;
                 refFit = fit;
@@ -157,6 +187,8 @@ void SDcontext::optimize() {
     lambda.setZero();
     V.resize(ineq_size);
 
+    rf.informOut = INFORM_UNINITIALIZED;
+
     switch (constrained) {
         case FALSE:{
             // unconstrained problem
@@ -212,3 +244,8 @@ void SDcontext::optimize() {
     }
 }
 
+void SteepestDescent(GradientOptimizerContext &rf)
+{
+	SDcontext sd(rf);
+	sd.optimize();
+}

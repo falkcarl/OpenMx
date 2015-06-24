@@ -243,8 +243,7 @@ void omxComputeGD::computeImpl(FitContext *fc)
 		fc->wanted |= FF_COMPUTE_GRADIENT;
 		break;
         case OptEngine_SD:{
-            SDcontext sd(rf);
-            sd.optimize();
+		SteepestDescent(rf);
             fc->wanted |= FF_COMPUTE_GRADIENT;
             break;
         }
