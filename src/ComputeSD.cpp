@@ -22,17 +22,13 @@ struct SDcontext {
         double rho;
         double tau;
         double gam;
-        double lam_min;
-        double lam_max;
-        double mu_max;
         Eigen::VectorXd mu;
         Eigen::VectorXd lambda;
-        Eigen::VectorXd V;
         double ICM_tol;
 
         // two methods for optimization
         void optimize();
-        void linesearch();
+	void linesearch(int maxIter);
         // constructor
         SDcontext(GradientOptimizerContext &goc);
 };
@@ -44,9 +40,6 @@ SDcontext::SDcontext(GradientOptimizerContext &goc): rf(goc){
             rho = 0;
             tau = 0.5;
             gam = 10;
-            lam_min = -1e20;
-            lam_max = 1e20;
-            mu_max = 1e20;
 	    double fudgeFactor = 0.002;
 	    ICM_tol = Global->feasibilityTolerance * fudgeFactor;
 }
@@ -64,17 +57,21 @@ struct fit_functional {
 		sd.rf.myineqFun();
 		double al = 0;
 		for (int i = 0; i < sd.eq_size; ++i) {
-			al += 0.5 * sd.rho * (sd.rf.equality[i] + sd.lambda[i] / sd.rho) * (sd.rf.equality[i] + sd.lambda[i] / sd.rho);
+			double val = sd.rf.equality[i];
+			if (!std::isfinite(val)) return val;
+			al += 0.5 * sd.rho * (val + sd.lambda[i] / sd.rho) * (val + sd.lambda[i] / sd.rho);
 		}
 
 		for (int i = 0; i < sd.ineq_size; ++i) {
-			al += 0.5 * sd.rho * std::max(0.0,(sd.rf.inequality[i] + sd.mu[i] / sd.rho)) * std::max(0.0,(sd.rf.inequality[i] + sd.mu[i] / sd.rho));
+			double val = sd.rf.inequality[i];
+			if (!std::isfinite(val)) return val;
+			al += 0.5 * sd.rho * std::max(0.0, (val + sd.mu[i] / sd.rho)) * std::max(0.0,(val + sd.mu[i] / sd.rho));
 		}
 		return fit + al;
 	}
 };
 
-void SDcontext::linesearch()
+void SDcontext::linesearch(int maxIter)
 {
     rf.informOut = INFORM_UNINITIALIZED;
     double priorSpeed = 1.0;
@@ -90,7 +87,6 @@ void SDcontext::linesearch()
     grad.resize(rf.fc->numParam);
 
     double relImprovement = 0;
-    int maxIter = 1000;
     int iter = 0;
     while(++iter < maxIter && !isErrorRaised()) {
 	    rf.fc->iterations += 1;
@@ -125,7 +121,7 @@ void SDcontext::linesearch()
             rf.checkActiveBoxConstraints(nextEst);
 
             double fit = ff(nextEst);
-            if (fit < refFit) {
+            if (std::isfinite(fit) && fit < refFit) {
                 foundBetter = true;
 		relImprovement = (refFit - fit) / (1+fabs(refFit));
 		refFit = fit;
@@ -145,7 +141,7 @@ void SDcontext::linesearch()
 		break;
 	}
 
-        if (rf.verbose >= 2) mxLog("major fit %f bestSpeed %g", refFit, bestSpeed);
+        if (rf.verbose >= 2) mxLog("linesearch[%d] %f bestSpeed %g", iter, refFit, bestSpeed);
         majorEst = bestEst;
         priorSpeed = bestSpeed * 1.1;
     }
@@ -195,7 +191,10 @@ void SDcontext::optimize()
         rho = std::max(1e-6, std::min(10.0, (2 * std::abs(rf.fc->fit) / (eq_norm + ineq_norm))));
     }
     else{
-        rho = 0;
+	    // If we use zero then we ignore the constraints completely.
+	    // This can allow our first subproblem to move estimates far
+	    // from a sane place.
+	    rho = 1.0;
     }
 
     if (rf.verbose >= 1) {
@@ -209,16 +208,22 @@ void SDcontext::optimize()
     mu.setZero();
     lambda.resize(eq_size);
     lambda.setZero();
-    V.resize(ineq_size);
 
+    int maxIter = 1000;
     switch (constrained) {
         case FALSE:{
             // unconstrained problem
-            linesearch();
+            linesearch(maxIter);
             break;
         }
         case TRUE:{
+		Eigen::VectorXd V(ineq_size);
+		const double mu_max = 1e20;
+		const double lam_max = 1e20;
+		const double lam_min = -1e20;
+
             double ICM = HUGE_VAL;
+	    int auMaxIter = 10;
             int iter = 0;
             // initialize penalty parameter rho and the Lagrange multipliers lambda and mu
             while (!isErrorRaised()) {
@@ -228,15 +233,18 @@ void SDcontext::optimize()
 		if (rf.verbose >= 3) {
 			mxLog("prev_ICM=%f, solve subproblem with rho=%f", prev_ICM, rho);
 		}
-                linesearch();
+		// don't waste time searching too precisely until rho is large
+                linesearch(maxIter - maxIter * std::max(auMaxIter * 0.5 - iter, 0.0)/(auMaxIter * 0.5));
                 rf.fc->copyParamToModel();
                 rf.solEqBFun();
                 rf.myineqFun();
 
                 for(int i = 0; i < eq_size; i++){
                     lambda[i] = std::min(std::max(lam_min, (lambda[i] + rho * rf.equality[i])), lam_max);
-                    ICM = std::max(ICM, std::abs(rf.equality[i]));
                 }
+		if (eq_size) {
+			ICM = std::max(ICM, rf.equality.array().abs().maxCoeff());
+		}
 
                 for(int i = 0; i < ineq_size; i++){
                     mu[i] = std::min(std::max(0.0, (mu[i] + rho * rf.inequality[i])),mu_max);
@@ -244,16 +252,20 @@ void SDcontext::optimize()
 
                 for(int i = 0; i < ineq_size; i++){
                     V[i] = std::max(rf.inequality[i], (-mu[i] / rho));
-                    ICM = std::max(ICM, std::abs(V[i]));
                 }
+		if (ineq_size) {
+			mxPrintMat("ineq", rf.inequality);
+			mxPrintMat("V", V);
+			ICM = std::max(ICM, V.array().abs().maxCoeff());
+		}
 
 		rho *= gam; // why not do this every time? TODO
 
                 if (ICM < ICM_tol) {
-                    if(rf.verbose >= 1) mxLog("Augmented lagrangian coverges!");
-                    return;
+			if(rf.verbose >= 1) mxLog("ICM=%f, Augmented lagrangian coverges!", ICM);
+			return;
                 }
-                if (iter >= 10) {
+                if (iter >= auMaxIter) {
                     rf.informOut = INFORM_ITERATION_LIMIT;
                     break;
                 }
