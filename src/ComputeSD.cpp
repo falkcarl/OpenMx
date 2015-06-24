@@ -10,6 +10,8 @@
 #include "ComputeSD.h"
 #include "finiteDifferences.h"
 
+namespace SteepestDescentNamespace {
+
 struct SDcontext {
         Eigen::VectorXd grad;
         int maxIter;
@@ -244,8 +246,10 @@ void SDcontext::optimize() {
     }
 }
 
+}
+
 void SteepestDescent(GradientOptimizerContext &rf)
 {
-	SDcontext sd(rf);
+	SteepestDescentNamespace::SDcontext sd(rf);
 	sd.optimize();
 }
