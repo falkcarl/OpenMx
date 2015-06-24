@@ -243,7 +243,7 @@ void omxComputeGD::computeImpl(FitContext *fc)
 		fc->wanted |= FF_COMPUTE_GRADIENT;
 		break;
         case OptEngine_SD:{
-		SteepestDescent(rf);
+            SteepestDescent(rf);
             break;
         }
         default: Rf_error("Optimizer %d is not available", engine);

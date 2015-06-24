@@ -13,35 +13,34 @@
 namespace SteepestDescentNamespace {
 
 struct SDcontext {
-        Eigen::VectorXd grad;
-        double shrinkage;
-        GradientOptimizerContext &rf;
-        //FitContext *fc;
-        int ineq_size;
-        int eq_size;
-        double rho;
-        double tau;
-        double gam;
-        Eigen::VectorXd mu;
-        Eigen::VectorXd lambda;
-        double ICM_tol;
-
-        // two methods for optimization
-        void optimize();
+    Eigen::VectorXd grad;
+    double shrinkage;
+    GradientOptimizerContext &rf;
+    int ineq_size;
+    int eq_size;
+    double rho;
+    double tau;
+    double gam;
+    Eigen::VectorXd mu;
+    Eigen::VectorXd lambda;
+    double ICM_tol;
+    double fudgeFactor;
+    // two methods for optimization
+    void optimize();
 	void linesearch(int maxIter);
-        // constructor
-        SDcontext(GradientOptimizerContext &goc);
+    // constructor
+    SDcontext(GradientOptimizerContext &goc);
 };
 
 SDcontext::SDcontext(GradientOptimizerContext &goc): rf(goc){
-            shrinkage = 0.7;
-            ineq_size = 0;
-            eq_size = 0;
-            rho = 0;
-            tau = 0.5;
-            gam = 10;
-	    double fudgeFactor = 0.002;
-	    ICM_tol = Global->feasibilityTolerance * fudgeFactor;
+    shrinkage = 0.7;
+    ineq_size = 0;
+    eq_size = 0;
+    rho = 0;
+    tau = 0.5;
+    gam = 10;
+    double fudgeFactor = 0.002;
+    ICM_tol = Global->feasibilityTolerance * fudgeFactor;
 }
 
 struct fit_functional {
@@ -90,8 +89,7 @@ void SDcontext::linesearch(int maxIter)
     int iter = 0;
     while(++iter < maxIter && !isErrorRaised()) {
 	    rf.fc->iterations += 1;
-	    gradient_with_ref(rf.gradientAlgo, rf.gradientIterations, rf.gradientStepSize,
-			      ff, refFit, majorEst, grad);
+	    gradient_with_ref(rf.gradientAlgo, rf.gradientIterations, rf.gradientStepSize, ff, refFit, majorEst, grad);
 
 	    if (rf.verbose >= 4) mxPrintMat("grad", grad);
 
@@ -110,7 +108,7 @@ void SDcontext::linesearch(int maxIter)
         Eigen::VectorXd searchDir = grad;
         searchDir /= searchDir.norm();
         prevEst.setConstant(nan("uninit"));
-	int retries = 300;
+        int retries = 300;
         while (--retries > 0 && !isErrorRaised()){
             Eigen::VectorXd nextEst = majorEst - speed * searchDir;
             nextEst = nextEst.cwiseMax(rf.solLB).cwiseMin(rf.solUB);
@@ -123,14 +121,15 @@ void SDcontext::linesearch(int maxIter)
             double fit = ff(nextEst);
             if (std::isfinite(fit) && fit < refFit) {
                 foundBetter = true;
-		relImprovement = (refFit - fit) / (1+fabs(refFit));
-		refFit = fit;
+                relImprovement = (refFit - fit) / (1+fabs(refFit));
+                refFit = fit;
                 bestSpeed = speed;
                 bestEst = nextEst;
                 break;
             }
             speed *= shrinkage;
         }
+
 
 	double fudgeFactor = 0.01;
 	if (!foundBetter || relImprovement < rf.ControlTolerance * fudgeFactor) {
@@ -214,19 +213,20 @@ void SDcontext::optimize()
             break;
         }
         case TRUE:{
-		Eigen::VectorXd V(ineq_size);
-		const double mu_max = 1e20;
-		const double lam_max = 1e20;
-		const double lam_min = -1e20;
+            Eigen::VectorXd V(ineq_size);
+            const double mu_max = 1e20;
+            const double lam_max = 1e20;
+            const double lam_min = -1e20;
 
             double ICM = HUGE_VAL;
-	    int auMaxIter = 10;
+            int auMaxIter = 50;
             int iter = 0;
             // initialize penalty parameter rho and the Lagrange multipliers lambda and mu
             while (!isErrorRaised()) {
                 iter++;
                 double prev_ICM = ICM;
                 ICM = 0;
+
 		if (rf.verbose >= 3) {
 			mxLog("prev_ICM=%f, solve subproblem with rho=%f", prev_ICM, rho);
 		}
@@ -240,9 +240,9 @@ void SDcontext::optimize()
                 for(int i = 0; i < eq_size; i++){
                     lambda[i] = std::min(std::max(lam_min, (lambda[i] + rho * rf.equality[i])), lam_max);
                 }
-		if (eq_size) {
-			ICM = std::max(ICM, rf.equality.array().abs().maxCoeff());
-		}
+                if (eq_size) {
+                    ICM = std::max(ICM, rf.equality.array().abs().maxCoeff());
+                }
 
                 for(int i = 0; i < ineq_size; i++){
                     mu[i] = std::min(std::max(0.0, (mu[i] + rho * rf.inequality[i])),mu_max);
@@ -251,15 +251,16 @@ void SDcontext::optimize()
                 for(int i = 0; i < ineq_size; i++){
                     V[i] = std::max(rf.inequality[i], (-mu[i] / rho));
                 }
+
 		if (ineq_size) {
 			ICM = std::max(ICM, V.array().abs().maxCoeff());
 		}
 
-		rho *= gam; // why not do this every time? TODO
+                rho *= gam; // why not do this every time? TODO
 
                 if (ICM < ICM_tol) {
-			if(rf.verbose >= 1) mxLog("ICM=%f, Augmented lagrangian coverges!", ICM);
-			return;
+                    if(rf.verbose >= 1) mxLog("ICM=%f, Augmented lagrangian coverges!", ICM);
+                    return;
                 }
                 if (iter >= auMaxIter) {
                     rf.informOut = INFORM_ITERATION_LIMIT;
