@@ -80,7 +80,9 @@ void SDcontext::linesearch(int maxIter)
     fit_functional ff(*this);
     double refFit = ff(currEst);
     if (!std::isfinite(refFit)) {
-	    Rf_error("Moved into infeasible region"); // should be impossible
+	    //Rf_error("Moved into infeasible region"); // should be impossible
+        rf.informOut = INFORM_STARTING_VALUES_INFEASIBLE;
+	    return;
     }
 
     grad.resize(rf.fc->numParam);
@@ -131,6 +133,7 @@ void SDcontext::linesearch(int maxIter)
         }
 
 
+
 	double fudgeFactor = 0.01;
 	if (!foundBetter || relImprovement < rf.ControlTolerance * fudgeFactor) {
 		if(rf.verbose >= 2) {
@@ -145,6 +148,8 @@ void SDcontext::linesearch(int maxIter)
         priorSpeed = bestSpeed * 1.1;
     }
     currEst = majorEst;
+    rf.fc->copyParamToModel();
+    ComputeFit("SD", rf.fitMatrix, FF_COMPUTE_FIT, rf.fc);
     if ((grad.array().abs() > 0.1).any()) {
 	    // wrong condition, see other optimizers
 	    // box constraints need special handling
@@ -162,6 +167,7 @@ void SDcontext::linesearch(int maxIter)
 void SDcontext::optimize()
 {
     bool constrained = TRUE;
+    rf.setupSimpleBounds();
     rf.fc->copyParamToModel();
     ComputeFit("SD", rf.fitMatrix, FF_COMPUTE_FIT, rf.fc);
     if (!std::isfinite(rf.fc->fit)) {
@@ -257,7 +263,7 @@ void SDcontext::optimize()
 		}
 
                 rho *= gam; // why not do this every time? TODO
-
+                mxLog("rho = %f", rho);
                 if (ICM < ICM_tol) {
                     if(rf.verbose >= 1) mxLog("ICM=%f, Augmented lagrangian coverges!", ICM);
                     return;
