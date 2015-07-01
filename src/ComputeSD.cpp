@@ -191,10 +191,7 @@ void SDcontext::optimize()
         rho = std::max(1e-6, std::min(10.0, (2 * std::abs(rf.fc->fit) / (eq_norm + ineq_norm))));
     }
     else{
-	    // If we use zero then we ignore the constraints completely.
-	    // This can allow our first subproblem to move estimates far
-	    // from a sane place.
-	    rho = 1.0;
+	    rho = NA_REAL; // not used
     }
 
     if (rf.verbose >= 1) {
