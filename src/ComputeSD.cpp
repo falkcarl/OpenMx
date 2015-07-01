@@ -167,7 +167,7 @@ void SDcontext::linesearch(int maxIter)
 void SDcontext::optimize()
 {
     bool constrained = TRUE;
-    //rf.setupSimpleBounds();
+    rf.setupSimpleBounds();
     rf.fc->copyParamToModel();
     ComputeFit("SD", rf.fitMatrix, FF_COMPUTE_FIT, rf.fc);
     if (!std::isfinite(rf.fc->fit)) {
