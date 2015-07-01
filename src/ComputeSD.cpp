@@ -231,7 +231,8 @@ void SDcontext::optimize()
 			mxLog("prev_ICM=%f, solve subproblem with rho=%f", prev_ICM, rho);
 		}
 		// don't waste time searching too precisely until rho is large
-                linesearch(maxIter - maxIter * std::max(auMaxIter * 0.5 - iter, 0.0)/(auMaxIter * 0.5));
+                //linesearch(maxIter - maxIter * std::max(auMaxIter * 0.5 - iter, 0.0)/(auMaxIter * 0.5));
+                linesearch(maxIter);
                 rf.fc->copyParamToModel();
                 rf.solEqBFun();
                 rf.myineqFun();
