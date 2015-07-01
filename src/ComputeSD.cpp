@@ -132,7 +132,7 @@ void SDcontext::linesearch(int maxIter)
             speed *= shrinkage;
         }
 
-	double fudgeFactor = 1.0;
+	double fudgeFactor = 0.01;
 	if (!foundBetter || relImprovement < rf.ControlTolerance * fudgeFactor) {
 		if(rf.verbose >= 2) {
 			mxLog("After %i iterations, cannot find better estimation along the gradient direction", iter);
@@ -206,7 +206,7 @@ void SDcontext::optimize()
     lambda.resize(eq_size);
     lambda.setZero();
 
-    int maxIter = 1000;
+    int maxIter = 10000;
     switch (constrained) {
         case FALSE:{
             // unconstrained problem
