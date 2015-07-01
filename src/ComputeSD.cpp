@@ -61,11 +61,11 @@ struct fit_functional {
 			if (!std::isfinite(val)) return val;
 			al += 0.5 * sd.rho * (val + sd.lambda[i] / sd.rho) * (val + sd.lambda[i] / sd.rho);
 		}
-
 		for (int i = 0; i < sd.ineq_size; ++i) {
 			double val = sd.rf.inequality[i];
 			if (!std::isfinite(val)) return val;
-			al += 0.5 * sd.rho * std::max(0.0, (val + sd.mu[i] / sd.rho)) * std::max(0.0,(val + sd.mu[i] / sd.rho));
+			double violation = std::max(0.0, (val + sd.mu[i] / sd.rho));
+			al += 0.5 * sd.rho * violation * violation;
 		}
 		return fit + al;
 	}
