@@ -187,7 +187,7 @@ void SDcontext::optimize()
     {
         ineq_norm += std::max(0.0, rf.inequality[i]) * std::max(0.0, rf.inequality[i]);
     }
-    if(eq_norm + ineq_norm != 0){
+    if (constrained){
         rho = std::max(1e-6, std::min(10.0, (2 * std::abs(rf.fc->fit) / (eq_norm + ineq_norm))));
     }
     else{
