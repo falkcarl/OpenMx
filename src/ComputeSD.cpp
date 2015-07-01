@@ -251,8 +251,6 @@ void SDcontext::optimize()
                     V[i] = std::max(rf.inequality[i], (-mu[i] / rho));
                 }
 		if (ineq_size) {
-			mxPrintMat("ineq", rf.inequality);
-			mxPrintMat("V", V);
 			ICM = std::max(ICM, V.array().abs().maxCoeff());
 		}
 
