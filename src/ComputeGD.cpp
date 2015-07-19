@@ -25,12 +25,14 @@
 #include "npsolswitch.h"
 #include "glue.h"
 #include "ComputeSD.h"
+#include "ComputeIS.h"
 
 enum OptEngine {
 	OptEngine_NPSOL,
 	OptEngine_CSOLNP,
     OptEngine_NLOPT,
-    OptEngine_SD
+    OptEngine_SD,
+    OptEngine_IS
 };
 
 class omxComputeGD : public omxCompute {
@@ -103,6 +105,8 @@ void omxComputeGD::initFromFrontend(omxState *globalState, SEXP rObj)
 #endif
 	} else if(strEQ(engineName, "SD")){
 		engine = OptEngine_SD;
+	} else if(strEQ(engineName, "IS")){
+		engine = OptEngine_IS;
 	} else {
 		Rf_error("%s: engine %s unknown", name, engineName);
 	}
@@ -244,6 +248,10 @@ void omxComputeGD::computeImpl(FitContext *fc)
 		break;
         case OptEngine_SD:{
             SteepestDescent(rf);
+            break;
+        }
+        case OptEngine_IS:{
+            IncrementalGradient(rf, 0.01);
             break;
         }
         default: Rf_error("Optimizer %d is not available", engine);
