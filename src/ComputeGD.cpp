@@ -251,7 +251,7 @@ void omxComputeGD::computeImpl(FitContext *fc)
             break;
         }
         case OptEngine_IS:{
-            IncrementalGradient(rf, 0.01);
+            IncrementalGradient(rf, 1);
             break;
         }
         default: Rf_error("Optimizer %d is not available", engine);

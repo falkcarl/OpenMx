@@ -12,27 +12,33 @@
 
 namespace IncrementalGradientNamespace {
 
-struct IGcontext {
+class IGcontext {
+public:
     Eigen::VectorXd grad;
     GradientOptimizerContext &rf;
-    double speed;
+    int speedmode;
+    /*
+    mode 1: Constant step size,
+    mode 2: Constant step length,
+    mode 3: Square summable but not summable
+    mode 4: Nonsummable diminishing
+    reference: Boyd, Stephen, Lin Xiao, and Almir Mutapcic. "Subgradient methods."
+    lecture notes of EE392o, Stanford University, Autumn Quarter 2004 (2003): 2004-2005.
+    */
     void optimize();
+    //int getIter();
     // constructor
-    IGcontext(GradientOptimizerContext &, double);
-//private:
-  //  double llwrapper(int i, GradientOptimizerContext &goc) const;
+    IGcontext(GradientOptimizerContext &, int);
+private:
+    static int iterations;
 };
 
-IGcontext::IGcontext(GradientOptimizerContext &goc, double stepsize): rf(goc), speed(stepsize) {}
+int IGcontext::iterations = 0;
 
-/*
-double IGcontext::llwrapper(int i, GradientOptimizerContext &goc){
-    goc.setupSimpleBounds();
-    goc.fc->copyParamToModel();
-    ComputeFit("IS", goc.fitMatrix, FF_COMPUTE_FIT, goc.fc);
-    return -2*log(*(goc.fitMatrix->data + (i -1)));
+IGcontext::IGcontext(GradientOptimizerContext &goc, int stepsize): rf(goc), speedmode(stepsize) {
+    iterations++;
 }
-*/
+
 struct rowfit_functional {
 	IGcontext &ig;
     int row;
@@ -67,6 +73,30 @@ void IGcontext::optimize(){
         rowfit_functional ff(*this, i);
         double refFit = ff(majorEst);
         gradient_with_ref(rf.gradientAlgo, rf.gradientIterations, rf.gradientStepSize, ff, refFit, majorEst, grad);
+        //int iter = getIter();
+        printf("iterations: %i", iterations);
+        double speed;
+        switch (speedmode){
+            case 1:{
+                speed = 0.01;
+                break;
+            }
+            case 2:{
+                speed = 0.01/grad.norm();
+                break;
+            }
+            case 3:{
+                speed = 0.1/iterations;
+                break;
+            }
+            case 4:{
+                speed = 0.1/sqrt(iterations);
+                break;
+            }
+            default:{
+                break;
+            }
+        }
         majorEst = majorEst - speed * grad;
         majorEst = majorEst.cwiseMax(rf.solLB).cwiseMin(rf.solUB);
         rf.checkActiveBoxConstraints(majorEst);
@@ -76,9 +106,9 @@ void IGcontext::optimize(){
 
 }
 
-void IncrementalGradient(GradientOptimizerContext &rf, double speed)
+void IncrementalGradient(GradientOptimizerContext &rf, int speedmode)
 {
-	IncrementalGradientNamespace::IGcontext ig(rf, speed);
+	IncrementalGradientNamespace::IGcontext ig(rf, speedmode);
 	ig.optimize();
 }
 
