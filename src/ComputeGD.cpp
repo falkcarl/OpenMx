@@ -26,13 +26,15 @@
 #include "glue.h"
 #include "ComputeSD.h"
 #include "ComputeIS.h"
+#include "ComputeDG.h"
 
 enum OptEngine {
 	OptEngine_NPSOL,
 	OptEngine_CSOLNP,
     OptEngine_NLOPT,
     OptEngine_SD,
-    OptEngine_IS
+    OptEngine_IS,
+    OptEngine_DG
 };
 
 class omxComputeGD : public omxCompute {
@@ -107,7 +109,10 @@ void omxComputeGD::initFromFrontend(omxState *globalState, SEXP rObj)
 		engine = OptEngine_SD;
 	} else if(strEQ(engineName, "IS")){
 		engine = OptEngine_IS;
-	} else {
+	} else if(strEQ(engineName, "DG")){
+		engine = OptEngine_DG;
+	}
+	else {
 		Rf_error("%s: engine %s unknown", name, engineName);
 	}
 
@@ -254,6 +259,11 @@ void omxComputeGD::computeImpl(FitContext *fc)
             IncrementalGradient(rf, 1);
             break;
         }
+        case OptEngine_DG:{
+            DistributedGradient(rf, 0.01);
+            break;
+        }
+
         default: Rf_error("Optimizer %d is not available", engine);
 	}
 

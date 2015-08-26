@@ -74,7 +74,7 @@ void IGcontext::optimize(){
         double refFit = ff(majorEst);
         gradient_with_ref(rf.gradientAlgo, rf.gradientIterations, rf.gradientStepSize, ff, refFit, majorEst, grad);
         //int iter = getIter();
-        printf("iterations: %i", iterations);
+        mxLog("iterations: %i", iterations);
         double speed;
         switch (speedmode){
             case 1:{
@@ -82,7 +82,7 @@ void IGcontext::optimize(){
                 break;
             }
             case 2:{
-                speed = 0.01/grad.norm();
+                speed = 0.1/grad.norm();
                 break;
             }
             case 3:{
